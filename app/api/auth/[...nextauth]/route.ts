@@ -1,15 +1,19 @@
-import NextAuth from 'next-auth';
+import NextAuth from 'next-auth/next';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
+import AppleProvider from 'next-auth/providers/apple';
 
 import bcrypt from 'bcrypt';
 
 import prisma from '@/lib/helpers/prisma';
+// import { generateAppleSecret } from '@/lib/helpers/oauth';
 
 const auth = async (req: NextApiRequest, res: NextApiResponse) => {
   await prisma.$connect();
+
+  // const appleSecret = await generateAppleSecret();
 
   const prismaAdapter = () => {
     try {
@@ -26,9 +30,13 @@ const auth = async (req: NextApiRequest, res: NextApiResponse) => {
     adapter: prismaAdapter(),
     debug: true,
     providers: [
+      // AppleProvider({
+      //   clientId: process.env.APPLE_CLIENT_ID ?? '',
+      //   clientSecret: appleSecret ?? '',
+      // }),
       GoogleProvider({
-        clientId: process.env.AUTH_GOOGLE_ID ?? '',
-        clientSecret: process.env.AUTH_GOOGLE_SECRET ?? '',
+        clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
       }),
       CredentialsProvider({
         name: 'credentials',
@@ -42,15 +50,12 @@ const auth = async (req: NextApiRequest, res: NextApiResponse) => {
             throw new Error('Please enter an email and password');
           }
 
-          console.log('HERE HERE HERE');
-
           // check to see if user exists
           const user = await prisma.user.findFirst({
             where: {
-              // Use toLowerCase for case-insensitive comparison (if supported)
               email: {
                 equals: credentials.email,
-                mode: 'insensitive', // This line ensures case-insensitive comparison
+                mode: 'insensitive',
               },
             },
           });
@@ -79,35 +84,72 @@ const auth = async (req: NextApiRequest, res: NextApiResponse) => {
         },
       }),
     ],
-    secret: process.env.AUTH_SECRET,
+    secret: process.env.NEXT_AUTH_SECRET,
     session: {
       strategy: 'jwt',
     },
     callbacks: {
-      async jwt({ token, user }) {
+      async jwt({ token, user, account, profile }) {
+        console.warn('JWT callback triggered');
+        console.warn('Initial token:', JSON.stringify(token, null, 2));
+        console.warn(
+          'JWT callback props',
+          JSON.stringify({
+            token,
+            user,
+            account,
+            profile,
+          }),
+        );
         if (user) {
-          // Explicitly add properties from the user object to the token
           token.id = user.id;
           token.email = user.email;
+          console.warn(
+            'User found, token updated with user details:',
+            JSON.stringify(token, null, 2),
+          );
         }
         return token;
       },
-      async session({ session, token }) {
+
+      async session({ session, token, user }) {
+        console.warn('Session callback triggered');
+        console.warn(
+          'Session object before modification:',
+          JSON.stringify(session, null, 2),
+        );
+        console.warn('Token object:', JSON.stringify(token, null, 2));
+        console.warn(
+          'JWT callback props',
+          JSON.stringify({
+            session,
+            token,
+            user,
+          }),
+        );
+
         session.user = token as any;
+
+        console.warn(
+          'Session object after modification:',
+          JSON.stringify(session, null, 2),
+        );
         return session;
       },
+
       async redirect({ url, baseUrl }) {
-        if (url.startsWith('/')) return `${baseUrl}${url}`;
-        else if (new URL(url).origin === baseUrl) return url;
-        return baseUrl;
+        console.warn('Redirect callback - url:', url, 'baseUrl:', baseUrl);
+        return url.startsWith('/') ? `${baseUrl}${url}` : url;
       },
+
       async signIn({ user, account, profile, email, credentials }) {
-        console.log('signIn callback - user:', user);
-        console.log('signIn callback - account:', account);
-        console.log('signIn callback - profile:', profile);
-        console.log('signIn callback - email:', email);
-        console.log('signIn callback - credentials:', credentials);
-        return true; // Return true to proceed with the sign-in
+        console.warn('signIn callback triggered');
+        console.warn('User:', JSON.stringify(user, null, 2));
+        console.warn('Account:', JSON.stringify(account, null, 2));
+        console.warn('Profile:', JSON.stringify(profile, null, 2));
+        console.warn('Email:', JSON.stringify(email, null, 2));
+        console.warn('Credentials:', JSON.stringify(credentials, null, 2));
+        return true;
       },
     },
     cookies: {

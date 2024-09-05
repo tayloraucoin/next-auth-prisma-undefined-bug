@@ -1,16 +1,7 @@
-import { encode, getToken } from 'next-auth/jwt';
-import { NextRequest } from 'next/server';
+import { encode } from 'next-auth/jwt';
 
-type Props = {
-  request: NextRequest;
-};
-type Response = {
-  error: string | null;
-  status: number;
-  userId: string;
-};
-
-const JWT_SECRET = process.env.AUTH_SECRET || '';
+const JWT_SECRET = process.env.NEXT_AUTH_SECRET || '';
+const SALT = process.env.NEXT_AUTH_SALT || '';
 
 export async function generateNextAuthCompatibleToken(
   userId: string,
@@ -25,22 +16,11 @@ export async function generateNextAuthCompatibleToken(
   const token = await encode({
     token: tokenPayload,
     secret: JWT_SECRET,
+    salt: SALT,
     maxAge: 60 * 60 * 24 * 30, // 30 days
   });
 
   return token;
-}
-
-export async function validateRequest({ request }: Props): Promise<Response> {
-  const session = await getToken({
-    req: request,
-    secureCookie: Boolean(process.env.VERCEL_ENV),
-  });
-  const userId = session?.id as string;
-
-  if (!userId) return { error: 'User ID not found', status: 400, userId };
-
-  return { error: null, status: 200, userId };
 }
 
 export const validateToken = async (
@@ -49,6 +29,8 @@ export const validateToken = async (
   setLoading?: (loading: boolean) => void,
 ) => {
   if (token) {
+    console.log('Validating token:', token); // Log token validation start
+
     try {
       const response = await fetch(
         `/api/auth/validate-token?token=${encodeURIComponent(token)}`,
@@ -58,12 +40,16 @@ export const validateToken = async (
         },
       );
 
+      console.log('Received response from server:', response); // Log response
+
       // Check if the response is ok (status code 200-299)
       if (!response.ok) {
         throw new Error(`Server error: ${response.status}`);
       }
 
       const result = await response.json();
+
+      console.log('Validation result:', result); // Log result of validation
 
       if (result.valid) {
         // Token is valid, proceed with sign-in
@@ -74,10 +60,15 @@ export const validateToken = async (
         if (setError) setError('Invalid or expired token');
       }
     } catch (err) {
-      console.error('Token validation error:', err);
+      console.error('Token validation error:', err); // Log validation error
       if (setError) setError('An error occurred while validating the token');
     } finally {
-      if (setLoading) setLoading(false);
+      if (setLoading) {
+        console.log('Setting loading state to false'); // Log loading state
+        setLoading(false);
+      }
     }
+  } else {
+    console.log('No token provided for validation.'); // Log missing token
   }
 };
